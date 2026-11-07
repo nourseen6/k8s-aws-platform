@@ -101,23 +101,44 @@ Steps 2–5 started as plain manifests applied with `kubectl`; they are now one 
 - **Hardened pods.** A Trivy misconfiguration scan found 11 HIGH issues in the first version of the chart: every container ran with the default security context. Now every pod runs as a **non-root user** with the RuntimeDefault seccomp profile, and every container **drops all Linux capabilities**, can't escalate privileges, and has a **read-only root filesystem**.
 - **Zero-downtime rollouts.** A `preStop` pause and a Traefik **retry** middleware stop requests from hitting pods that are shutting down. Two rollouts under steady traffic (10 requests per second): **800 of 800 requests succeeded**.
 - **Tested:** `helm upgrade` (scale to 3 replicas), a broken release with a bad image tag (the old pods kept serving), and `helm rollback` to the last good revision.
-- **CI** ([`chart.yml`](.github/workflows/chart.yml)) runs on every pull request: `helm lint --strict`, rendering with default and external-database values, and a Trivy config scan that fails on HIGH or CRITICAL findings.
+- **CI** ([`chart.yml`](.github/workflows/chart.yml)) runs on every pull request: `helm lint --strict`, rendering with default, monitoring, and external-database values, and a Trivy config scan that fails on HIGH or CRITICAL findings.
+
+### Autoscaling and monitoring (Step 9) — [`hpa.yaml`](charts/url-shortener/templates/hpa.yaml), [`monitoring.yaml`](charts/url-shortener/templates/monitoring.yaml), [`platform/`](platform)
+
+- **metrics-server** reads CPU and memory from the node; `kubectl top` and the autoscaler depend on it.
+- A **HorizontalPodAutoscaler** keeps the backend between 2 and 6 replicas, targeting 60% of the CPU request, with a 2-minute scale-down window.
+- **kube-prometheus-stack** runs Prometheus, Alertmanager, Grafana, and kube-state-metrics. The Grafana admin password comes from a Secret created with `kubectl` — the chart's default password is public.
+- **Traefik's metrics** give request rate, status codes, and latency for every Service, so the app is monitored without changing its code.
+- The chart adds a **Grafana dashboard** (requests per second, 5xx ratio, p95 latency, autoscaler replicas, CPU per pod, restarts) and **three alerts**: backend 5xx ratio above 5%, unavailable replicas, and PostgreSQL not ready.
+- **Load test** (k6, 60 virtual users for 4 minutes through the ingress): 499,876 requests at about 2,080 per second, **0 failed**, p95 82 ms. The autoscaler went from **2 → 3 → 6** replicas, then back to 2 after the load stopped.
+- **Outage test:** with PostgreSQL scaled to 0, `URLShortenerDatabaseDown` and then `URLShortenerHighErrorRate` reached Alertmanager within about 3 minutes. After PostgreSQL came back, new links worked and old links were still there.
+- Problems hit on the way: Grafana was **OOMKilled** with a 256Mi memory limit (raised to 512Mi), and Traefik's own `service` metric label is renamed to `exported_service` by Prometheus, so the queries use that.
 
 ### Run it
 
+Platform add-ons (values in [`platform/`](platform)):
+
 ```bash
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add traefik https://traefik.github.io/charts
-helm upgrade --install traefik traefik/traefik --version 42.3.1 \
-  --namespace traefik --create-namespace
 
+helm upgrade --install metrics-server metrics-server/metrics-server --version 3.14.0   -n kube-system -f platform/metrics-server-values.yaml
+
+kubectl create namespace monitoring
+kubectl create secret generic grafana-admin -n monitoring   --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -hex 16)"
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack --version 92.22.0   -n monitoring -f platform/kube-prometheus-stack-values.yaml
+
+helm upgrade --install traefik traefik/traefik --version 42.3.1   -n traefik --create-namespace -f platform/traefik-values.yaml
+```
+
+The app:
+
+```bash
 kubectl create namespace dev
+kubectl create secret generic postgres-credentials -n dev   --from-literal=POSTGRES_USER=shortener   --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)"   --from-literal=POSTGRES_DB=shortener
 
-kubectl create secret generic postgres-credentials -n dev \
-  --from-literal=POSTGRES_USER=shortener \
-  --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
-  --from-literal=POSTGRES_DB=shortener
-
-helm upgrade --install url-shortener charts/url-shortener -n dev --wait
+helm upgrade --install url-shortener charts/url-shortener -n dev   -f charts/url-shortener/values-local.yaml --wait
 ```
 
 Open http://localhost — Docker Desktop publishes the Traefik `LoadBalancer` Service on port 80. Or test the API directly:
@@ -126,12 +147,18 @@ Open http://localhost — Docker Desktop publishes the Traefik `LoadBalancer` Se
 curl http://localhost/api/health
 ```
 
+Grafana (sign in with the user and password from the `grafana-admin` Secret), then open the **URL Shortener** dashboard:
+
+```bash
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+```
+
 Upgrade, look at the history, and roll back:
 
 ```bash
-helm upgrade url-shortener charts/url-shortener -n dev --set backend.replicas=3
+helm upgrade url-shortener charts/url-shortener -n dev -f charts/url-shortener/values-local.yaml   --set backend.image.tag=sha-39dd090
 helm history url-shortener -n dev
-helm rollback url-shortener 1 -n dev
+helm rollback url-shortener <revision> -n dev
 ```
 
 > Kubernetes Secrets are base64-encoded, not encrypted. On a real cluster, access to them is limited with RBAC and they are encrypted at rest or kept in a secrets manager.
