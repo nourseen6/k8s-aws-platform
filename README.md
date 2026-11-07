@@ -64,6 +64,43 @@ issue → branch → commits → pull request → CI passes → merge → issue 
 
 Nothing is pushed directly to `main`.
 
+## What's built so far
+
+### Local cluster (Step 1)
+
+Docker Desktop's Kubernetes with kind: one node that is both the control plane and the worker.
+
+### The app (Steps 2–3) — [`k8s/deployment.yaml`](k8s/deployment.yaml), [`k8s/service.yaml`](k8s/service.yaml)
+
+- A **Deployment** keeps **2 replicas** of the Project 1 image running. Deleting a pod makes Kubernetes create a new one.
+- **Readiness and liveness probes** call `/health`. During a rolling update, an old pod is removed only after its replacement is ready — no downtime.
+- **Resource requests and limits** stop one pod from starving the others.
+- A **ClusterIP Service** gives the pods one stable name and IP inside the cluster.
+
+### The database (Step 4) — [`k8s/postgres.yaml`](k8s/postgres.yaml)
+
+- PostgreSQL runs as a **StatefulSet** with a stable pod name (`postgres-0`) and a **1Gi PersistentVolumeClaim**.
+- The credentials live in a **Secret** created with `kubectl`, never in Git. The app reads them through `secretKeyRef` and builds `DATABASE_URL` from them.
+- An **init container** waits for PostgreSQL before the app starts, so the app doesn't crash-loop after a cluster restart.
+- **Tested:** a link created on one replica opens from the other, and it survives deleting the database pod — the new `postgres-0` mounts the same volume.
+
+### Run it
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+
+kubectl create secret generic postgres-credentials -n dev \
+  --from-literal=POSTGRES_USER=shortener \
+  --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
+  --from-literal=POSTGRES_DB=shortener
+
+kubectl apply -f k8s/
+kubectl port-forward -n dev service/url-shortener 8080:80
+curl http://127.0.0.1:8080/health
+```
+
+> Kubernetes Secrets are base64-encoded, not encrypted. On a real cluster, access to them is limited with RBAC and they are encrypted at rest or kept in a secrets manager.
+
 ## License
 
 [MIT](LICENSE)
