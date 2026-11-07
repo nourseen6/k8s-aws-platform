@@ -1,0 +1,4 @@
+# Values for the local Docker Desktop cluster, on top of values.yaml:
+#   helm upgrade --install url-shortener charts/url-shortener -n dev -f charts/url-shortener/values-local.yaml
+monitoring:
+  enabled: true

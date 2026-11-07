@@ -1,0 +1,10 @@
+# Traefik: the ingress controller (the only way into the cluster).
+#   helm upgrade --install traefik traefik/traefik --version 42.3.1 \
+#     -n traefik --create-namespace -f platform/traefik-values.yaml
+metrics:
+  prometheus:
+    # Request count, status codes, and latency for every backend Service.
+    # The ServiceMonitor tells Prometheus to scrape them (needs
+    # kube-prometheus-stack installed first, for the CRD).
+    serviceMonitor:
+      enabled: true

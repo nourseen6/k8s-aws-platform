@@ -6,7 +6,9 @@ metadata:
     app: url-shortener
     {{- include "url-shortener.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ .Values.backend.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: url-shortener
