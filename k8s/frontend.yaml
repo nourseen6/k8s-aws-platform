@@ -1,0 +1,114 @@
+# The frontend: one static page served by nginx. The page lives in a
+# ConfigMap, so there's no image to build. It calls the API through the
+# Ingress at /api, which forwards to the backend Service.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-html
+  namespace: dev
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>URL Shortener</title>
+      <style>
+        body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; color: #1f2328; }
+        input, button { font: inherit; padding: .5rem .75rem; }
+        input { width: 100%; box-sizing: border-box; margin-bottom: .5rem; }
+        #result { margin-top: 1rem; word-break: break-all; }
+        small { color: #59636e; }
+      </style>
+    </head>
+    <body>
+      <h1>URL Shortener</h1>
+      <form id="form">
+        <input id="url" type="url" placeholder="https://example.com/a/very/long/link" required>
+        <button type="submit">Shorten</button>
+      </form>
+      <p id="result"></p>
+      <small>Frontend on nginx · API on FastAPI · data in PostgreSQL · all on Kubernetes</small>
+      <script>
+        document.getElementById("form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const result = document.getElementById("result");
+          const response = await fetch("/api/shorten", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: document.getElementById("url").value }),
+          });
+          if (!response.ok) {
+            result.textContent = "Error " + response.status;
+            return;
+          }
+          const { code } = await response.json();
+          const link = location.origin + "/api/" + code;
+          result.innerHTML = 'Short link: <a href="' + link + '">' + link + "</a>";
+        });
+      </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: dev
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: nginx
+          # The unprivileged image runs nginx as a non-root user on port 8080.
+          image: nginxinc/nginx-unprivileged:1.29-alpine
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: html
+          configMap:
+            name: frontend-html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: dev
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 8080
