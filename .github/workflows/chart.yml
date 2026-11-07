@@ -29,6 +29,9 @@ jobs:
       - name: Render with default values
         run: helm template url-shortener charts/url-shortener -n dev > rendered.yaml
 
+      - name: Render with monitoring (dashboard and alert rules)
+        run: helm template url-shortener charts/url-shortener -n dev -f charts/url-shortener/values-local.yaml > /dev/null
+
       - name: Render with an external database
         run: helm template url-shortener charts/url-shortener -n dev --set postgres.enabled=false --set postgres.externalHost=db.example.internal > /dev/null
 
