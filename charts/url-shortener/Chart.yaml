@@ -1,0 +1,6 @@
+apiVersion: v2
+name: url-shortener
+description: URL shortener — FastAPI backend, nginx frontend, PostgreSQL, and Traefik routing.
+type: application
+version: 0.1.0
+appVersion: "sha-39dd090"

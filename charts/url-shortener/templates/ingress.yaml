@@ -1,0 +1,67 @@
+{{- if .Values.ingress.enabled }}
+# /      → frontend
+# /api/* → backend, with /api stripped by the Traefik Middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-api-prefix
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+---
+# If the connection to a backend pod fails (for example a pod shutting down
+# during a rollout), retry the request on another pod instead of returning 502/504.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: retry
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  retry:
+    attempts: 3
+    initialInterval: 100ms
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: url-shortener
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-retry@kubernetescrd,{{ .Release.Namespace }}-strip-api-prefix@kubernetescrd
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: url-shortener
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+{{- end }}
