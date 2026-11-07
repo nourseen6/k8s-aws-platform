@@ -1,0 +1,64 @@
+# Prometheus, Alertmanager, Grafana, and kube-state-metrics.
+#   kubectl create namespace monitoring
+#   kubectl create secret generic grafana-admin -n monitoring \
+#     --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -hex 16)"
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     --version 92.22.0 -n monitoring -f platform/kube-prometheus-stack-values.yaml
+
+prometheus:
+  prometheusSpec:
+    # Load ServiceMonitors and alert rules from every namespace and release,
+    # not only the ones created by this chart.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    retention: 2d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+grafana:
+  # The admin password comes from a Secret created with kubectl, never from
+  # Git (the chart's built-in default password is public).
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  sidecar:
+    dashboards:
+      # Load dashboards from ConfigMaps labeled grafana_dashboard=1 in any namespace.
+      searchNamespace: ALL
+  # Grafana 13 needs more than 256Mi at startup: with that limit it was
+  # OOMKilled on every start.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Local Docker Desktop cluster only: node-exporter needs host mounts this node
+# doesn't support, and the control-plane components aren't reachable for
+# scraping, so their targets would only produce false alerts.
+nodeExporter:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
