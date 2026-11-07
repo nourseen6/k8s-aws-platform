@@ -110,7 +110,7 @@ helm repo add traefik https://traefik.github.io/charts
 helm upgrade --install traefik traefik/traefik --version 42.3.1 \
   --namespace traefik --create-namespace
 
-kubectl apply -f k8s/namespace.yaml
+kubectl create namespace dev
 
 kubectl create secret generic postgres-credentials -n dev \
   --from-literal=POSTGRES_USER=shortener \
