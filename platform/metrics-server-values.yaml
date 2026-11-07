@@ -1,0 +1,8 @@
+# metrics-server: reads CPU and memory use from every kubelet.
+# The HorizontalPodAutoscaler and `kubectl top` depend on it.
+#   helm upgrade --install metrics-server metrics-server/metrics-server \
+#     --version 3.14.0 -n kube-system -f platform/metrics-server-values.yaml
+args:
+  # The local kind node's kubelet uses a self-signed certificate.
+  # Only for the local cluster — EKS doesn't need this.
+  - --kubelet-insecure-tls
