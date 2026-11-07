@@ -15,6 +15,19 @@ spec:
       labels:
         app: url-shortener
     spec:
+      # Wait for PostgreSQL before starting the app, so the app doesn't
+      # crash-loop when the cluster starts and the database isn't ready yet.
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18-alpine
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo waiting for postgres; sleep 2; done"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       containers:
         - name: app
           image: ghcr.io/nourseen6/secure-cicd-pipeline:latest
