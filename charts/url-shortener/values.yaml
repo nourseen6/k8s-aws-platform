@@ -1,0 +1,55 @@
+# Default values for the url-shortener chart.
+# Override per environment with -f values-<env>.yaml or --set.
+
+backend:
+  # The image built, scanned, and published by Project 1's pipeline.
+  # Pinned to a commit tag rather than "latest" so deployments are repeatable.
+  image:
+    repository: ghcr.io/nourseen6/secure-cicd-pipeline
+    tag: sha-39dd090
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+frontend:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: 1.29-alpine
+  replicas: 2
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+postgres:
+  # Set to false to use an external database (for example AWS RDS) instead.
+  enabled: true
+  image:
+    repository: postgres
+    tag: 18-alpine
+  storage: 1Gi
+  # Host of an external database, used when postgres.enabled is false.
+  externalHost: ""
+  database: shortener
+  # The Secret must hold POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB.
+  # It is created outside the chart, so no password is ever stored in Git.
+  existingSecret: postgres-credentials
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: traefik

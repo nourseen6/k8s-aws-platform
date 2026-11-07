@@ -1,0 +1,11 @@
+url-shortener is installed in namespace "{{ .Release.Namespace }}" (release "{{ .Release.Name }}", revision {{ .Release.Revision }}).
+
+Backend image: {{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }} × {{ .Values.backend.replicas }}
+
+Check the pods:
+  kubectl get pods -n {{ .Release.Namespace }}
+{{- if .Values.ingress.enabled }}
+
+Open the app through the ingress controller (http://localhost on Docker Desktop), or:
+  curl http://localhost/api/health
+{{- end }}
