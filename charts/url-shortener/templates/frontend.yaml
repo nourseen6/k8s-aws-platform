@@ -29,9 +29,16 @@ spec:
         # Restart the pods when the page changes, so they serve the new version.
         checksum/html: {{ .Files.Get "files/index.html" | sha256sum }}
     spec:
+      securityContext:
+        {{- include "url-shortener.podSecurityContext" . | nindent 8 }}
+        # nginx user in the unprivileged image
+        runAsUser: 101
+        runAsGroup: 101
       containers:
         - name: nginx
           image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          securityContext:
+            {{- include "url-shortener.containerSecurityContext" . | nindent 12 }}
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -50,10 +57,15 @@ spec:
             - name: html
               mountPath: /usr/share/nginx/html
               readOnly: true
+            # nginx keeps its pid file and temp files in /tmp.
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: html
           configMap:
             name: frontend-html
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

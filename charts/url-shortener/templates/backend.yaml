@@ -16,12 +16,19 @@ spec:
         app: url-shortener
         {{- include "url-shortener.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        {{- include "url-shortener.podSecurityContext" . | nindent 8 }}
+        # appuser in the Project 1 image
+        runAsUser: 10001
+        runAsGroup: 10001
       {{- if .Values.postgres.enabled }}
       # Wait for PostgreSQL so the app doesn't crash-loop after a cluster restart.
       initContainers:
         - name: wait-for-postgres
           image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
-          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo waiting for postgres; sleep 2; done"]
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432 -U probe; do echo waiting for postgres; sleep 2; done"]
+          securityContext:
+            {{- include "url-shortener.containerSecurityContext" . | nindent 12 }}
           resources:
             requests:
               cpu: 10m
@@ -33,6 +40,15 @@ spec:
       containers:
         - name: app
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          securityContext:
+            {{- include "url-shortener.containerSecurityContext" . | nindent 12 }}
+          lifecycle:
+            preStop:
+              # Keep serving for a few seconds after the pod is marked for deletion,
+              # while the ingress controller removes it from its endpoints.
+              # Without this, requests during a rollout can hit a stopping pod (504).
+              exec:
+                command: ["sleep", "5"]
           ports:
             - containerPort: 8000
           env:
@@ -63,6 +79,13 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            # The root filesystem is read-only; /tmp is the only writable path.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
