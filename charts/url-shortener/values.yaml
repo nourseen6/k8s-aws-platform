@@ -61,3 +61,8 @@ postgres:
 ingress:
   enabled: true
   className: traefik
+
+monitoring:
+  # Grafana dashboard and Prometheus alert rules. Needs kube-prometheus-stack
+  # (platform/kube-prometheus-stack-values.yaml) for the PrometheusRule CRD.
+  enabled: false
