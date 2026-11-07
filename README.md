@@ -84,9 +84,21 @@ Docker Desktop's Kubernetes with kind: one node that is both the control plane a
 - An **init container** waits for PostgreSQL before the app starts, so the app doesn't crash-loop after a cluster restart.
 - **Tested:** a link created on one replica opens from the other, and it survives deleting the database pod — the new `postgres-0` mounts the same volume.
 
+### Frontend and routing (Step 5) — [`k8s/frontend.yaml`](k8s/frontend.yaml), [`k8s/ingress.yaml`](k8s/ingress.yaml)
+
+- The **frontend** is one HTML page stored in a **ConfigMap** and served by the unprivileged nginx image (non-root, 2 replicas). No image to build.
+- **Traefik** is the ingress controller, installed with Helm. The community `ingress-nginx` controller was [retired in March 2026](https://www.kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/), so this project uses Traefik, which still supports the standard `Ingress` resource.
+- **Routing:** `/` goes to the frontend; `/api/*` goes to the backend, and a Traefik `Middleware` strips `/api`, so `/api/shorten` reaches the API's `/shorten`.
+- **Only the ingress controller is exposed.** The frontend, backend, and PostgreSQL Services are all `ClusterIP`.
+- **Tested through the Ingress:** the page loads at `/`, `POST /api/shorten` returns a code, and `GET /api/<code>` redirects (307) to the original URL.
+
 ### Run it
 
 ```bash
+helm repo add traefik https://traefik.github.io/charts
+helm upgrade --install traefik traefik/traefik --version 42.3.1 \
+  --namespace traefik --create-namespace
+
 kubectl apply -f k8s/namespace.yaml
 
 kubectl create secret generic postgres-credentials -n dev \
@@ -95,8 +107,12 @@ kubectl create secret generic postgres-credentials -n dev \
   --from-literal=POSTGRES_DB=shortener
 
 kubectl apply -f k8s/
-kubectl port-forward -n dev service/url-shortener 8080:80
-curl http://127.0.0.1:8080/health
+```
+
+Open http://localhost — Docker Desktop publishes the Traefik `LoadBalancer` Service on port 80. Or test the API directly:
+
+```bash
+curl http://localhost/api/health
 ```
 
 > Kubernetes Secrets are base64-encoded, not encrypted. On a real cluster, access to them is limited with RBAC and they are encrypted at rest or kept in a secrets manager.
